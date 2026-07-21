@@ -1,0 +1,187 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SubscriptionCategory {
+  ENTERTAINMENT
+  MUSIC
+  CLOUD_STORAGE
+  INTERNET
+  UTILITIES
+  EDUCATION
+  GAMING
+  PRODUCTIVITY
+  HEALTH
+  OTHER
+}
+
+enum GroupRole {
+  OWNER
+  MEMBER
+}
+
+enum SplitType {
+  EQUAL
+  PERCENTAGE
+  CUSTOM
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+enum WalletTransactionType {
+  TOP_UP
+  TRANSFER_IN
+  TRANSFER_OUT
+  WITHDRAWAL
+}
+
+model User {
+  id               String        @id @default(cuid())
+  name             String
+  email            String        @unique
+  passwordHash     String
+  emailVerifiedAt  DateTime?
+  verificationCodeHash String?
+  verificationCodeExpiresAt DateTime?
+  passwordResetCodeHash String?
+  passwordResetCodeExpiresAt DateTime?
+  walletBalance    Decimal       @default(0) @db.Decimal(10, 2)
+  walletTransactions WalletTransaction[]
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  groupMemberships GroupMember[]
+  paidSubscriptions Subscription[] @relation("SubscriptionPayer")
+  createdGroups    Group[]       @relation("GroupCreator")
+  expenseShares    ExpenseShare[]
+  sentPayments     Payment[]     @relation("PaymentDebtor")
+  receivedPayments Payment[]     @relation("PaymentCreditor")
+  sentInvitations  Invitation[]  @relation("InvitationSender")
+
+  @@map("users")
+}
+
+model WalletTransaction {
+  id        String                @id @default(cuid())
+  type      WalletTransactionType
+  amount    Decimal               @db.Decimal(10, 2)
+  note      String?
+  createdAt DateTime              @default(now())
+  userId    String
+  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("wallet_transactions")
+}
+
+model Group {
+  id            String          @id @default(cuid())
+  name          String
+  description   String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  creatorId     String
+  creator       User            @relation("GroupCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  members       GroupMember[]
+  subscriptions Subscription[]
+  payments      Payment[]
+  invitations   Invitation[]
+
+  @@map("groups")
+}
+
+model GroupMember {
+  id       String    @id @default(cuid())
+  role     GroupRole @default(MEMBER)
+  joinedAt DateTime  @default(now())
+  userId   String
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupId  String
+  group    Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, groupId])
+  @@map("group_members")
+}
+
+model Subscription {
+  id          String               @id @default(cuid())
+  name        String
+  totalCost   Decimal              @db.Decimal(10, 2)
+  currency    String               @default("USD") @db.VarChar(3)
+  category    SubscriptionCategory @default(OTHER)
+  billingDay  Int                  @default(1)
+  splitType   SplitType            @default(EQUAL)
+  status      SubscriptionStatus   @default(ACTIVE)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  payerId     String
+  payer       User                 @relation("SubscriptionPayer", fields: [payerId], references: [id], onDelete: Restrict)
+  groupId     String
+  group       Group                @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  shares      ExpenseShare[]
+
+  @@map("subscriptions")
+}
+
+model ExpenseShare {
+  id             String       @id @default(cuid())
+  amount         Decimal      @db.Decimal(10, 2)
+  percentage     Decimal?     @db.Decimal(5, 2)
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, userId])
+  @@map("expense_shares")
+}
+
+model Payment {
+  id         String        @id @default(cuid())
+  amount     Decimal       @db.Decimal(10, 2)
+  currency   String        @default("USD") @db.VarChar(3)
+  status     PaymentStatus @default(PENDING)
+  note       String?
+  paidAt     DateTime?
+  createdAt  DateTime      @default(now())
+  groupId    String
+  group      Group         @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  debtorId   String
+  debtor     User          @relation("PaymentDebtor", fields: [debtorId], references: [id], onDelete: Cascade)
+  creditorId String
+  creditor   User          @relation("PaymentCreditor", fields: [creditorId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model Invitation {
+  id        String           @id @default(cuid())
+  email     String
+  status    InvitationStatus @default(PENDING)
+  createdAt DateTime         @default(now())
+  groupId   String
+  group     Group            @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User             @relation("InvitationSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, email])
+  @@map("invitations")
+}
