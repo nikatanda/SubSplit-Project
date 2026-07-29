@@ -4,6 +4,7 @@ import cors from "cors";
 import express from "express";
 import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer";
+import { Resend } from "resend";
 import prisma from "./lib/prisma.js";
 
 const app = express();
@@ -11,6 +12,7 @@ const app = express();
 const PORT = process.env.PORT || 5001;
 const JWT_SECRET = process.env.JWT_SECRET || "change-this-development-secret";
 const APP_URL = process.env.APP_URL || "http://localhost:5173";
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const mailer = process.env.SMTP_HOST ? nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT || 587),
@@ -27,8 +29,18 @@ const tokenFor = (user) => jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn
 const verificationCode = () => String(Math.floor(100000 + Math.random() * 900000));
 
 async function sendEmail({ to, subject, html }) {
-  if (!mailer) return false;
   try {
+    if (resend) {
+      const { error } = await resend.emails.send({
+        from: process.env.EMAIL_FROM || process.env.SMTP_FROM || "SubSplit <onboarding@resend.dev>",
+        to: [to],
+        subject,
+        html,
+      });
+      if (error) throw new Error(error.message || "Resend could not send the email");
+      return true;
+    }
+    if (!mailer) return false;
     await mailer.sendMail({ from: process.env.SMTP_FROM || process.env.SMTP_USER, to, subject, html });
     return true;
   } catch (error) {
